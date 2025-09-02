@@ -355,16 +355,6 @@ Switch:
 		i += len("ull")
 	case 'u': // undefined
 		i += len("ndefined")
-	default:
-		// If we're scanning an object key and it begins with an identifier start,
-		// consume an unquoted identifier key
-		if len(d.scan.parseState) > 0 && d.scan.parseState[len(d.scan.parseState)-1] == parseObjectKey {
-			c := data[i-1]
-			if c < 0x80 && asciiStartSet[c] {
-				for ; i < len(data) && ((data[i] < 0x80 && asciiContinueSet[data[i]]) || data[i] >= 0x80); i++ {
-				}
-			}
-		}
 	}
 	if i < len(data) {
 		d.opcode = stateEndValue(&d.scan, data[i])
@@ -691,9 +681,9 @@ func (d *decodeState) object(v reflect.Value) error {
 			panic(phasePanicMsg)
 		}
 
-		// Read key.
+		// Read key: use scanner-driven scan to keep state machine in sync.
 		start := d.readIndex()
-		d.rescanLiteral()
+		d.scanWhile(scanContinue)
 		item := d.data[start:d.readIndex()]
 		key, ok := unquoteKeyBytes(item)
 		if !ok {
@@ -1107,7 +1097,7 @@ func (d *decodeState) objectInterface() map[string]any {
 
 		// Read key.
 		start := d.readIndex()
-		d.rescanLiteral()
+		d.scanWhile(scanContinue)
 		item := d.data[start:d.readIndex()]
 		key, ok := unquoteKey(item)
 		if !ok {
