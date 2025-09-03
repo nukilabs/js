@@ -1,4 +1,4 @@
-# github.com/nukilabs/js
+# Javascript Object Decoding
 
 A small fork of Go's encoding/json (Go 1.25) with minimal tweaks to accept JavaScript-style object keys during decoding:
 
@@ -38,4 +38,5 @@ func main() {
 ## Notes
 
 - Token streaming API also supports single-quoted and bare identifier object keys.
+
 - This project copies Go's encoding/json under its BSD license (see LICENSE) and applies minimal changes in the scanner and decoder.
