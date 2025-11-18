@@ -347,14 +347,22 @@ Switch:
 				break Switch
 			}
 		}
-	case 't': // true
-		i += len("rue")
-	case 'f': // false
-		i += len("alse")
-	case 'n': // null
-		i += len("ull")
-	case 'u': // undefined
-		i += len("ndefined")
+	default:
+		// Identifier (true, false, null, undefined, or any unknown identifier)
+		// Scan until we hit a non-identifier character
+		// Also allows '.' to support member expressions like window.location
+		c := data[i-1]
+		if (c < 0x80 && asciiStartSet[c]) || c >= 0x80 {
+			for ; i < len(data); i++ {
+				c := data[i]
+				if c < 0x80 {
+					if !asciiContinueSet[c] && c != '.' {
+						break Switch
+					}
+				}
+				// For non-ASCII, continue (validation happens in decoder)
+			}
+		}
 	}
 	if i < len(data) {
 		d.opcode = stateEndValue(&d.scan, data[i])
@@ -867,7 +875,9 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 		d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
 		return nil
 	}
-	isNull := item[0] == 'n' || item[0] == 'u' // null or undefined
+	// Check if it's null (not true, false, number, or string)
+	itemStr := string(item)
+	isNull := itemStr != "true" && itemStr != "false" && item[0] != '"' && item[0] != '\'' && item[0] != '-' && (item[0] < '0' || item[0] > '9')
 	u, ut, pv := indirect(v, isNull)
 	if u != nil {
 		return u.UnmarshalJSON(item)
@@ -878,12 +888,14 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 				d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
 				return nil
 			}
-			val := "number"
-			switch item[0] {
-			case 'n':
-				val = "null"
-			case 't', 'f':
+			itemStr := string(item)
+			var val string
+			if itemStr == "true" || itemStr == "false" {
 				val = "bool"
+			} else if item[0] == '-' || (item[0] >= '0' && item[0] <= '9') {
+				val = "number"
+			} else {
+				val = "null" // null, undefined, or unknown identifier
 			}
 			d.saveError(&UnmarshalTypeError{Value: val, Type: v.Type(), Offset: int64(d.readIndex())})
 			return nil
@@ -901,40 +913,65 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 	v = pv
 
 	switch c := item[0]; c {
-	case 'n', 'u': // null or undefined
-		// The main parser checks that only true and false can reach here,
-		// but if this was a quoted string input, it could be anything.
-		if fromQuoted && string(item) != "null" && string(item) != "undefined" {
-			d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
-			break
-		}
-		switch v.Kind() {
-		case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
-			v.SetZero()
-			// otherwise, ignore null for primitives/string
-		}
-	case 't', 'f': // true, false
-		value := item[0] == 't'
-		// The main parser checks that only true and false can reach here,
-		// but if this was a quoted string input, it could be anything.
-		if fromQuoted && string(item) != "true" && string(item) != "false" {
-			d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
-			break
-		}
-		switch v.Kind() {
-		default:
+	case 't': // true or unknown identifier
+		itemStr := string(item)
+		if itemStr == "true" {
 			if fromQuoted {
 				d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
-			} else {
-				d.saveError(&UnmarshalTypeError{Value: "bool", Type: v.Type(), Offset: int64(d.readIndex())})
+				break
 			}
-		case reflect.Bool:
-			v.SetBool(value)
-		case reflect.Interface:
-			if v.NumMethod() == 0 {
-				v.Set(reflect.ValueOf(value))
-			} else {
+			switch v.Kind() {
+			default:
 				d.saveError(&UnmarshalTypeError{Value: "bool", Type: v.Type(), Offset: int64(d.readIndex())})
+			case reflect.Bool:
+				v.SetBool(true)
+			case reflect.Interface:
+				if v.NumMethod() == 0 {
+					v.Set(reflect.ValueOf(true))
+				} else {
+					d.saveError(&UnmarshalTypeError{Value: "bool", Type: v.Type(), Offset: int64(d.readIndex())})
+				}
+			}
+		} else {
+			// Unknown identifier, treat as null
+			if fromQuoted {
+				d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
+				break
+			}
+			switch v.Kind() {
+			case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
+				v.SetZero()
+			}
+		}
+
+	case 'f': // false or unknown identifier
+		itemStr := string(item)
+		if itemStr == "false" {
+			if fromQuoted {
+				d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
+				break
+			}
+			switch v.Kind() {
+			default:
+				d.saveError(&UnmarshalTypeError{Value: "bool", Type: v.Type(), Offset: int64(d.readIndex())})
+			case reflect.Bool:
+				v.SetBool(false)
+			case reflect.Interface:
+				if v.NumMethod() == 0 {
+					v.Set(reflect.ValueOf(false))
+				} else {
+					d.saveError(&UnmarshalTypeError{Value: "bool", Type: v.Type(), Offset: int64(d.readIndex())})
+				}
+			}
+		} else {
+			// Unknown identifier, treat as null
+			if fromQuoted {
+				d.saveError(fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
+				break
+			}
+			switch v.Kind() {
+			case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
+				v.SetZero()
 			}
 		}
 
@@ -975,13 +1012,7 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			}
 		}
 
-	default: // number
-		if c != '-' && (c < '0' || c > '9') {
-			if fromQuoted {
-				return fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type())
-			}
-			panic(phasePanicMsg)
-		}
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9': // number
 		switch v.Kind() {
 		default:
 			if v.Kind() == reflect.String && v.Type() == numberType {
@@ -1029,6 +1060,15 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 				break
 			}
 			v.SetFloat(n)
+		}
+
+	default: // null, undefined, or unknown identifier
+		if fromQuoted {
+			return fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type())
+		}
+		switch v.Kind() {
+		case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
+			v.SetZero()
 		}
 	}
 	return nil
@@ -1232,11 +1272,17 @@ func (d *decodeState) literalInterface() any {
 	item := d.data[start:d.readIndex()]
 
 	switch c := item[0]; c {
-	case 'n', 'u': // null or undefined
+	case 't': // true or unknown identifier
+		if string(item) == "true" {
+			return true
+		}
 		return nil
 
-	case 't', 'f': // true, false
-		return c == 't'
+	case 'f': // false or unknown identifier
+		if string(item) == "false" {
+			return false
+		}
+		return nil
 
 	case '"', '\'': // string (allow both quotes)
 		s, ok := unquote(item)
@@ -1245,15 +1291,15 @@ func (d *decodeState) literalInterface() any {
 		}
 		return s
 
-	default: // number
-		if c != '-' && (c < '0' || c > '9') {
-			panic(phasePanicMsg)
-		}
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9': // number
 		n, err := d.convertNumber(string(item))
 		if err != nil {
 			d.saveError(err)
 		}
 		return n
+
+	default: // null, undefined, or unknown identifier
+		return nil
 	}
 }
 

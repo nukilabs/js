@@ -238,15 +238,14 @@ func stateBeginValue(s *scanner, c byte) int {
 	case 'f': // beginning of false
 		s.step = stateF
 		return scanBeginLiteral
-	case 'n': // beginning of null
-		s.step = stateN
-		return scanBeginLiteral
-	case 'u': // beginning of undefined
-		s.step = stateU
-		return scanBeginLiteral
 	}
 	if '1' <= c && c <= '9' { // beginning of 1234.5
 		s.step = state1
+		return scanBeginLiteral
+	}
+	// Allow any identifier in value position (null, undefined, or unknown)
+	if (c < 0x80 && asciiStartSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
 		return scanBeginLiteral
 	}
 	return s.error(c, "looking for beginning of value")
@@ -400,6 +399,17 @@ func stateInBareKey(s *scanner, c byte) int {
 	return stateEndValue(s, c)
 }
 
+// stateInBareValue is the state after reading the first byte of an identifier in value position.
+// It continues reading identifier characters until reaching a non-identifier character.
+// Also allows '.' to support member expressions like window.location
+func stateInBareValue(s *scanner, c byte) int {
+	if (c < 0x80 && asciiContinueSet[c]) || c == '.' || c >= 0x80 {
+		return scanContinue
+	}
+	// End of identifier; process this byte in end state (e.g., ',' or whitespace).
+	return stateEndValue(s, c)
+}
+
 // stateInStringEsc is the state after reading `"\` during a quoted string.
 func stateInStringEsc(s *scanner, c byte) int {
 	switch c {
@@ -548,7 +558,12 @@ func stateT(s *scanner, c byte) int {
 		s.step = stateTr
 		return scanContinue
 	}
-	return s.error(c, "in literal true (expecting 'r')")
+	// Not 'true', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateTr is the state after reading `tr`.
@@ -557,7 +572,12 @@ func stateTr(s *scanner, c byte) int {
 		s.step = stateTru
 		return scanContinue
 	}
-	return s.error(c, "in literal true (expecting 'u')")
+	// Not 'true', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateTru is the state after reading `tru`.
@@ -566,7 +586,12 @@ func stateTru(s *scanner, c byte) int {
 		s.step = stateEndValue
 		return scanContinue
 	}
-	return s.error(c, "in literal true (expecting 'e')")
+	// Not 'true', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateF is the state after reading `f`.
@@ -575,7 +600,12 @@ func stateF(s *scanner, c byte) int {
 		s.step = stateFa
 		return scanContinue
 	}
-	return s.error(c, "in literal false (expecting 'a')")
+	// Not 'false', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateFa is the state after reading `fa`.
@@ -584,7 +614,12 @@ func stateFa(s *scanner, c byte) int {
 		s.step = stateFal
 		return scanContinue
 	}
-	return s.error(c, "in literal false (expecting 'l')")
+	// Not 'false', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateFal is the state after reading `fal`.
@@ -593,7 +628,12 @@ func stateFal(s *scanner, c byte) int {
 		s.step = stateFals
 		return scanContinue
 	}
-	return s.error(c, "in literal false (expecting 's')")
+	// Not 'false', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
+		return scanContinue
+	}
+	return stateEndValue(s, c)
 }
 
 // stateFals is the state after reading `fals`.
@@ -602,106 +642,12 @@ func stateFals(s *scanner, c byte) int {
 		s.step = stateEndValue
 		return scanContinue
 	}
-	return s.error(c, "in literal false (expecting 'e')")
-}
-
-// stateN is the state after reading `n`.
-func stateN(s *scanner, c byte) int {
-	if c == 'u' {
-		s.step = stateNu
+	// Not 'false', treat as generic identifier
+	if (c < 0x80 && asciiContinueSet[c]) || c >= 0x80 {
+		s.step = stateInBareValue
 		return scanContinue
 	}
-	return s.error(c, "in literal null (expecting 'u')")
-}
-
-// stateU is the state after reading `u`.
-func stateU(s *scanner, c byte) int {
-	if c == 'n' {
-		s.step = stateUn
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'n')")
-}
-
-// stateUn is the state after reading `un`.
-func stateUn(s *scanner, c byte) int {
-	if c == 'd' {
-		s.step = stateUnd
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'd')")
-}
-
-// stateUnd is the state after reading `und`.
-func stateUnd(s *scanner, c byte) int {
-	if c == 'e' {
-		s.step = stateUnde
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'e')")
-}
-
-// stateUnde is the state after reading `unde`.
-func stateUnde(s *scanner, c byte) int {
-	if c == 'f' {
-		s.step = stateUndef
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'f')")
-}
-
-// stateUndef is the state after reading `undef`.
-func stateUndef(s *scanner, c byte) int {
-	if c == 'i' {
-		s.step = stateUndefi
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'i')")
-}
-
-// stateUndefi is the state after reading `undefi`.
-func stateUndefi(s *scanner, c byte) int {
-	if c == 'n' {
-		s.step = stateUndefin
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'n')")
-}
-
-// stateUndefin is the state after reading `undefin`.
-func stateUndefin(s *scanner, c byte) int {
-	if c == 'e' {
-		s.step = stateUndefine
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'e')")
-}
-
-// stateUndefine is the state after reading `undefine`.
-func stateUndefine(s *scanner, c byte) int {
-	if c == 'd' {
-		s.step = stateEndValue
-		return scanContinue
-	}
-	return s.error(c, "in literal undefined (expecting 'd')")
-}
-
-// stateNu is the state after reading `nu`.
-func stateNu(s *scanner, c byte) int {
-	if c == 'l' {
-		s.step = stateNul
-		return scanContinue
-	}
-	return s.error(c, "in literal null (expecting 'l')")
-}
-
-// stateNul is the state after reading `nul`.
-func stateNul(s *scanner, c byte) int {
-	if c == 'l' {
-		s.step = stateEndValue
-		return scanContinue
-	}
-	return s.error(c, "in literal null (expecting 'l')")
+	return stateEndValue(s, c)
 }
 
 // stateError is the state after reaching a syntax error,

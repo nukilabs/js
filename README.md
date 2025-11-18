@@ -8,7 +8,8 @@ A small fork of Go's encoding/json (Go 1.25) with minimal tweaks to accept JavaS
 Everything else behaves like encoding/json, with these differences:
 
 - String values may be single-quoted or double-quoted. Numbers/booleans/null unchanged.
- - The JavaScript literal `undefined` is accepted on decode and treated like null.
+- The JavaScript literal `undefined` is accepted on decode and treated like null.
+- Unknown identifier values (e.g., `myVar`, `someValue`, `window.location`) are accepted on decode and treated like null.
 - Struct field tags use `js:"..."` instead of `json:"..."`.
 - Marshal/Encoder output remains standard JSON.
 
@@ -32,6 +33,10 @@ func main() {
     var m map[string]any
     _ = js.Unmarshal([]byte("{a:1, 'b':2, \"c\":3}"), &m)
     fmt.Println(m) // map[a:1 b:2 c:3]
+    
+    // Unknown identifiers and member expressions are treated as null
+    _ = js.Unmarshal([]byte("{x: someUnknownValue, y: window.location, z: 42}"), &m)
+    fmt.Println(m) // map[x:<nil> y:<nil> z:42]
 }
 ```
 
