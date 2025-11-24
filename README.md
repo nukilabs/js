@@ -4,6 +4,7 @@ A small fork of Go's encoding/json (Go 1.25) with minimal tweaks to accept JavaS
 
 - Unquoted identifier keys are allowed: `{a:1, b:2}`
 - Single-quoted keys are allowed: `{'a':1, 'b':2}`
+- Trailing commas are allowed: `{a:1, b:2,}` and `[1, 2, 3,]`
 
 Everything else behaves like encoding/json, with these differences:
 
