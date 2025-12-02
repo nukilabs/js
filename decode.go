@@ -1025,6 +1025,16 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 				return fmt.Errorf("js: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type())
 			}
 			d.saveError(&UnmarshalTypeError{Value: "number", Type: v.Type(), Offset: int64(d.readIndex())})
+		case reflect.Bool:
+			// Allow unmarshaling 0 and 1 into bool (false and true)
+			switch string(item) {
+			case "0":
+				v.SetBool(false)
+			case "1":
+				v.SetBool(true)
+			default:
+				d.saveError(&UnmarshalTypeError{Value: "number " + itemStr, Type: v.Type(), Offset: int64(d.readIndex())})
+			}
 		case reflect.Interface:
 			n, err := d.convertNumber(string(item))
 			if err != nil {

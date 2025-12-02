@@ -11,6 +11,7 @@ Everything else behaves like encoding/json, with these differences:
 - String values may be single-quoted or double-quoted. Numbers/booleans/null unchanged.
 - The JavaScript literal `undefined` is accepted on decode and treated like null.
 - Unknown identifier values (e.g., `myVar`, `someValue`, `window.location`) are accepted on decode and treated like null.
+- Numbers `0` and `1` can be unmarshaled into `bool` fields (as `false` and `true` respectively).
 - Struct field tags use `js:"..."` instead of `json:"..."`.
 - Marshal/Encoder output remains standard JSON.
 
